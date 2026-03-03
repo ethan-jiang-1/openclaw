@@ -54,8 +54,12 @@ openclaw gateway start
 2. **打包状态大满贯**：你不仅需要打包你每天能看见的 Markdown 项目代码（Workspace），还必须打包整个 `~/.openclaw`（哪怕它是被 `.gitignore` 隐藏的），因为那里装着 API 密钥和向量化的直觉树。
 3. **跨机解压还原**：拷到新机器对齐路径。
 4. **自愈唤醒（Doctor Repair）**：换了机器，绝对路径和权限一定乱套。不要直接 `gateway start`，先运行：
-   `openclaw doctor --non-interactive`
-   让内置的庸医（Doctor）跳过人类弹窗，自动把所有环境变量、错配的路径和受损的依赖包撸平，最后再重启服务。
+   ```bash
+   openclaw doctor --non-interactive
+   # 或者非脚本环境下允许交互修复推荐运行：
+   # openclaw doctor --fix
+   ```
+   利用系统原生的运维医生（Doctor）跳过人类弹窗（或自动修复），把所有环境变量、受损的密钥文件结构、错配的路径撸平，甚至它还能自动嗅探并执行底层的（Migrations）状态迁移更迭。最后再去启动服务。
 
 ---
 
@@ -70,8 +74,19 @@ openclaw gateway start
 在你要跑路（迁移机器）的前一天，你对你的 Agent 下达指令：
 > *"请扫描你所有的 SQLite 记忆库以及我们过去 3 个月解决的重大报错，把那些需要用直觉去防备的坑、你总结的深层业务逻辑，全部以显性规则的形态，分类整理写入本项目的 `workspace/MEMORY.md` 和专属的 `workspace/SKILL.md` 中。我要抽取你的隐性灵魂！"*
 
-**结果收益：**
-这样一来，你只需要靠 Git 把代码推到云端。
-新机器拉下来代码后（只有 Markdown，不存在任何 SQLite），启动网关。Agent 一进门看到塞得满满当当的 `MEMORY.md` 和 `SKILL.md`，它会在后台花几分钟时间自动把这些显性文本再次送入 Embedding 模型，“逆炼”生成新的 SQLite 向量记忆数据库。
+**结果收益与重生步骤：**
 
-**这就是所谓的“浴火重生”。只要你的知识总结得足够纯粹并落在了 Markdown 上，只要 Git 不挂，这个高阶智能体永远不死，随时可在任何一台裸机上无缝复活！**
+1. **迁移**：这样一来，你只需要靠 Git 把代码推到云端。新机器拉下来代码后（只有 Markdown，不存在任何 SQLite），启动网关。
+2. **强制重构向量脑**：新机器启动后，为了避免等待后台慢慢扫描，你可以直接利用 OpenClaw 原生的内存管理工具，强制它吃透这些知识。
+   执行以下指令：
+   ```bash
+   openclaw memory index --force
+   ```
+   *这会强制 Agent 读取刚刚迁移过来的 `MEMORY.md` 等显性文件，调用 Embedding 模型（如 OpenAI 或本地节点），“逆炼”生成全新的 SQLite 向量摘要图谱。*
+3. **验明正身**：
+   ```bash
+   openclaw memory status
+   ```
+   *查看回显，当看到 `Index error: false` 且 `Indexed X chunks` 时，这个高阶智能体便宣告彻底浴火重生。*
+
+**总结**：只要你的知识总结得足够纯粹并落在了 Markdown 上，只要 Git 不挂，配合原生的 `memory index` 重构指令，这个高阶智能体永远不死，随时可在任何一台裸机上无缝复活！
