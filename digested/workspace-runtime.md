@@ -2,6 +2,12 @@
 
 本文档专注于 OpenClaw 安装后的**运行态（Runtime）**结构，重点解析 Agent 在终端用户的机器上是如何通过 `~/.openclaw` 目录感知环境、加载配置并拼装出最终的大模型 Prompt 的。
 
+## 零、 核心设计哲学：Local-first & Workspace-centric
+
+OpenClaw 选用完全基于本地文件系统（Workspace）的配置模式，而非完全依赖繁重的云端数据库，其背后有深层的战略与技术考量：
+- **极简的开发者心智**：秉持 "Everything is Markdown" 的理念，极大降低了开发者深度定制 Agent 的门槛。
+- **绝对的数据主权与工程化**：配置与记忆存在于用户的本地系统，确保隐私和本地控制权；同时完美兼容 Git，使得 Agent 的配置可以像代码一样被版本化管理和分发。
+
 ## 一、 核心运行态目录：`~/.openclaw/`
 
 当 OpenClaw 在用户系统上安装并运行后，会在当前用户的主目录下生成一个大脑枢纽目录：`~/.openclaw/`。这里存放着 Agent 所有的运行时状态、记忆和扩展能力。
@@ -39,10 +45,12 @@
    - **作用**：提供使用者的偏好信息（如时区设置 `userTimezone`、特定使用习惯）。
    - **示例**：下午 5 点后不发打扰消息、优先使用简体中文等个性化配置。
 
-### 2.2 特殊场景文件
+### 2.2 特殊场景文件（面向 Autonomous System Agents）
+
+针对更前沿的“自主系统代理（Autonomous System Agents）”，OpenClaw 提供了以下特殊上下文，为其脱离频繁用户干预、进行独立运作铺平基石：
 
 6. **`MEMORY.md` (长时记忆块)**
-   - **作用**：持久化的长期记忆。
+   - **作用**：持久化的长期记忆，是建立 Agent 跨会话连贯认知的基础。
    - **加载时机**：**仅在主会话（Main Session）中被加载**，子会话（如 Subagent）不会加载以节省 Token。
    - **内容示例**：用户的历史偏好、项目特有的注意事项等。
 
@@ -52,7 +60,7 @@
 
 8. **`HEARTBEAT.md` (心跳模式)**
    - **作用**：定义 Agent 在后台静默运行（心跳模式）时的巡检逻辑。
-   - **场景**：如定时检查系统健康、执行周期性任务时的行为规范。
+   - **场景**：如定时检查系统健康、执行周期性任务时的行为规范。这使得 Agent 拥有了独立于用户交互的时间线操作能力（Time-driven events）。
 
 ## 三、 上下文组装管线：从静态文件到运行态 Prompt
 
@@ -77,9 +85,9 @@ DEFAULT_MEMORY_FILENAME = "MEMORY.md"
 ```
 
 **动态过滤机制**：
-- **主代理 (Main Agent)**：加载完整的 Workspace 文件库，包括 `MEMORY.md`。
-- **子代理 (Subagent)**：仅加载 `AGENTS.md`、`SOUL.md`、`TOOLS.md`、`IDENTITY.md`、`USER.md` 五个核心文件，自动剥离掉 `MEMORY.md` 等繁重上下文。
-- **过滤依据**：钩子 Hook 可以根据 `run.kind`（default/heartbeat/cron）或 Session 类型返回不同的文件集合。
+- **主代理 (Main Agent)**：默认加载完整的 Workspace 文件库，包括 `MEMORY.md`。
+- **子代理 (Subagent) 与 Cron**：系统通过 `filterBootstrapFilesForSession` 核心逻辑和 `MINIMAL_BOOTSTRAP_ALLOWLIST` 白名单，进行铁腕过滤。明确**仅保留**极简五大金刚（`AGENTS.md`、`SOUL.md`、`TOOLS.md`、`IDENTITY.md`、`USER.md`），自动剥离掉 `MEMORY.md`、`BOOTSTRAP.md` 和 `HEARTBEAT.md` 等繁重上下文，从而有效控制 Token 膨胀。
+- **过滤依据**：钩子 Hook 以及原生的 Session 类型（基于 SessionKey 检测，如 Subagent 或 Cron）会共同决定哪些文件被注入。
 
 **读取保护**：
 - 通过 `openBoundaryFile()` 进行安全校验，防止路径遍历攻击。
@@ -208,63 +216,37 @@ agents:
 
 最后一步，系统会将所有元素按严格顺序拼装成一个巨型 Prompt 传给大模型。
 
-**拼装顺序（从上到下）**：
+**权限驱动与拼装顺序（从上到下严格编排）**：
+
+System Prompt 并非静态文本，其内部模块是**高度权限驱动**的。各类工具、运行态机制（如是否在安全沙盒环境下）会动态决定后续注入的说明条目。其实际组装遵循 LLM 近因效应（Recency Bias）考量，将最核心的环境与配置信息靠后放置。实际工程构建顺序如下：
 
 1. **Identity（身份底色）**
-   ```
-   You are a personal assistant running inside OpenClaw.
-   ```
-
+   - `You are a personal assistant running inside OpenClaw.`
 2. **Tooling（工具清单）**
-   - 列出所有可用工具及其摘要（Bash, Edit, Glob, Grep, Read, Write, WebFetch 等）
-
+   - **权限驱动体现**：系统动态注入 `availableTools`，仅列出当前沙盒/主机运行态下允许暴露的工具。
 3. **Tool Call Style（工具调用风格）**
-   - 指导 Agent 如何描述工具调用（是否要 Narrative 描述）
-
+   - 指导 Agent 何时应叙述推导，何时闭嘴直接调工具。
 4. **Safety（安全准则）**
-   - 基于 Constitutional AI 的安全原则
-
-5. **Skills（技能 XML）**
-   - 注入阶段三生成的 `<available_skills>XML 块`
-
-6. **Memory Recall（记忆召回）**
-   - memory_search/memory_get 工具的使用指导
-
-7. **Workspace（工作区上下文）**
-   - **这是最核心的部分！**
-   - 所有加载并裁剪后的 Workspace 文件（`AGENTS.md`, `SOUL.md`, `TOOLS.md` 等）都会被挂载在 `# Project Context` 标题之下。
-
-8. **Documentation（文档链接）**
-   - https://docs.openclaw.ai/ 相关链接
-
-9. **Sandbox（沙盒信息）**
-   - 如果容器化运行，注明环境差异
-
-10. **Authorized Senders（授权发送者）**
-    - 所有者的手机号码、ID 等白名单信息
-
-11. **Current Date & Time（时间信息）**
-    - 当前系统时间和时区（基于 `USER.md` 或系统默认）
-
-12. **Messaging（消息协议）**
-    - 跨会话消息传递、message 工具使用说明
-
-13. **Voice（语音功能）**
-    - TTS（文本转语音）提示
-
-14. **Reactions（反应机制）**
-    - Telegram/Signal 等平台的表情符号反应 guidance
-
-15. **Reasoning Format（推理格式）**
-    - `::<reasoning>` 和 `<final>` 标签的使用规范（如果启用）
-
-16. **Silent Replies（静默回复）**
-    - `SILENT_REPLY_TOKEN` 的使用场景
-
-17. **Heartbeats（心跳协议）**
-    - `HEARTBEAT_OK` 协议说明
-
-18. **Runtime（运行时元数据）**
+   - 注入核心 Constitutional AI 限制，确保 Agent 遵循停止和审计指令。
+5. **OpenClaw CLI & Self-Update（基础运维指导）**
+   - 提供 `openclaw gateway` 启停命令参考，以及严格限制未授权的配置和版本更新行为。
+6. **Skills（技能状态） & Memory Recall（记忆触发）**
+   - 注入 `<available_skills>` 块及 `memory_search` 使用守则。
+7. **Workspace 物理约束与 Sandbox（环境认知）**
+   - 宣告当前真实工作目录路径；若处于沙盒环境，则明确划定其不可逃逸的文件与环境边界。
+8. **Authorized Senders & Time（鉴权与时区）**
+   - 注入当前系统的时区和用户白名单认证信息。
+9. **Reply Tags & Messaging & Voice（交互与通信信道）**
+   - 指导如何生成特定交互介质的响应（如 `[[reply_to_current]]` 标签、多 Channel 发送机制等）。
+10. **Reactions & Reasoning Format（思考格式与社交反应）**
+    - （如启用）注入 `<think>` 推理链封装规范及 IM 消息回复的 Emoji 反应（Reaction）指导。
+11. **Project Context（核心 Workspace 文件组装）**
+    - **这是占据大量 Token 的重头戏，被刻意后置以加强模型的近因遵循权重！**
+    - 包括按需裁剪加载的 `AGENTS.md`、`SOUL.md` 等；如果命中 `SOUL.md`，还会额外注入强化其人设扮演的前置声明。
+12. **Silent Replies & Heartbeats（自动化应答机制）**
+    - 指明静默 Token（`SILENT_REPLY_TOKEN`）和心跳响应（`HEARTBEAT_OK`）的触发条件，避免回复冗余文本。
+13. **Runtime（运行时元数据收尾）**
+    - 最后提供高密度的系统级微签名：
     ```
     Runtime: agent=main | host=MacBook-Pro | repo=/path/to/repo |
              os=Darwin 23.0.0 (arm64) | node=v22.0.0 |
