@@ -29,16 +29,16 @@
 这些是“养”出来的手感，它们与**本机环境、运行时引擎、长期存储**强绑定。一旦换了电脑（甚至仅仅是切了 OpenClaw 全局配置），新 Agent 就会显得“变笨了”。
 
 ### 1. 丢失了“潜意识”：本地 SQLite 向量记忆引擎
-OpenClaw 默认开启了 `memorySearch.enabled: true`。一旦开启，它会将项目中的文档和长对话提取为区块，并在后台进行向量化，存于本项目根目录下的 `.openclaw/state/memory/.../index.sqlite` 文件中。
+OpenClaw 默认开启了 `memorySearch.enabled: true`。一旦开启，它会将项目中的文档和长对话提取为区块，并在后台进行向量化，存于本地系统的全局缓存路径中（通常是 `~/.cache/qmd/index.sqlite` 或 `$XDG_CACHE_HOME/qmd/index.sqlite`）。
 
-> **为什么会被丢失？** 虽然这个 `.sqlite` 文件物理上位于 Workspace 目录内，但是在标准的 Node/Python 等工程规范中，**整个 `.openclaw/` 状态文件夹通常是被加入 `.gitignore` 的**。
+> **为什么会被丢失？** 虽然 Workspace 的知识是项目维度的，但**底层的向量索引数据库是存放在宿主机的全局/临时目录中的**。
 
 *   **条件化使用**：向量库并非绝对绑定，如果你在全局配置中设定了 `agents.defaults.memorySearch.enabled: false`，则 Agent 完全退化为只读 Markdown 的纯文本模式，此时这部分隐性资产压根不会产生。
-*   **Session 与时间记忆**：如果你在配置中开启了实验性的 `experimental: { sessionMemory: true }`，Agent 过去的历史会话（Session Transcripts）也会被灌入这个 SQLite 库中。并且在检索时会叠加时间衰减算法（Temporal Decay），让越新的记忆权重越高。**这部分“时间感知”也是完全强依赖这个会被 Git 忽略的 `.sqlite` 文件的。**
-*   **克隆后的表现**：新员工 `git clone` 到的新仓库里没有这个 `.sqlite`。当 Agent 面对曾出现过的诡异报错时，它无法通过 `memory_search` 发生语义级“条件反射”直接避险，因为它失去了那颗被时间打磨过的记忆大脑。
+*   **Session 与时间记忆**：如果你在配置中开启了实验性的 `experimental: { sessionMemory: true }`，Agent 过去的历史会话（Session Transcripts）也会被灌入这个 SQLite 库中。并且在检索时会叠加时间衰减算法（Temporal Decay），让越新的记忆权重越高。**这部分“时间感知”也是完全强依赖这个处于本地机器缓存里的 `.sqlite` 文件的。**
+*   **克隆后的表现**：新员工 `git clone` 到的新仓库里无法带走上一个主机的 `.sqlite` 缓存。当 Agent 面对曾出现过的诡异报错时，它无法通过 `memory_search` 发生语义级“条件反射”直接避险，因为它失去了那颗被时间打磨过的记忆大脑。
 
 ### 2. 丢失了“通用内功”：全局与个人技能库
-技能加载拥有严格层级（`bundled < managed < personal < project`）。如果你养它的过程中，曾经在全局装了技能（比如存在 `~/.openclaw/skills/` 中，为了能跨多个项目通用）：
+技能加载拥有严格层级（`bundled < managed < personal < project`）。如果你养它的过程中，曾经在全局装了技能（比如存在 `~/.openclaw/skills/` 或 `~/.agents/skills/` 中，为了能跨多个项目通用）：
 *   **表现**：新项目的 Agent 突然不知道怎么去连 AWS 服务器了。因为虽然 Workspace 里写了它该干什么，但提供肢体能力的全局对应 `SKILL.md` 没跟着一起拷过来。
 
 ### 3. 丢失了“物理黑卡”：Host 容器与配置提权
